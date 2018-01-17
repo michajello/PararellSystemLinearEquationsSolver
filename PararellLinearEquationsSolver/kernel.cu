@@ -6,6 +6,7 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <math.h>
+#define MIN_DIAG_VALUE 0.1
 
 typedef double m_elem;
 typedef double*  matrix;
@@ -51,8 +52,7 @@ __global__ void findOptimalRowIndexKernel(int row_index, matrix  dev_AB, int row
 
 	int i = row_index + threadIdx.x + 1;
 	
-	if ((dev_AB[i * row_size + row_index] < (-1 + epsilon) || dev_AB[i * row_size + row_index] > (1 - epsilon))) {
-		
+	if ((dev_AB[i * row_size + row_index] < (-MIN_DIAG_VALUE + epsilon) || dev_AB[i * row_size + row_index] > (MIN_DIAG_VALUE - epsilon))) {
 		*new_row_index = i;
 	}
 }
@@ -169,7 +169,7 @@ void synchronizeDevice(char * functionName, matrix devAB) {
 
 int getIndexOfMaxAbsValue(m_elem * table, int n, int start_index) {
 	int max_index = start_index;
-	int tmp_max_value = table[start_index];
+	m_elem tmp_max_value = table[start_index];
 
 	for (int i = start_index + 1; i < n; i++)	{
 		if (fabs(table[i]) > fabs(tmp_max_value)) {
@@ -195,11 +195,7 @@ cudaError_t gaussEliminationWithCuda(matrix A, int n)
 		fprintf(stderr, "cudaSetDevice failed!  Do you have a CUDA-capable GPU installed?");
 		goto Error;
 	}
-	struct cudaDeviceProp properties;
-	//cudaGetDeviceProperties(&properties, 0);
-	//printf("using %s %l multiprocessors", properties.multiProcessorCount);
-	//printf("max threads per processor: ", properties.maxThreadsPerMultiProcessor);
-	
+
 	cudaStatus = cudaMalloc((void**)&dev_AB, size * sizeof(m_elem));	
 	if (cudaStatus != cudaSuccess) {
 		fprintf(stderr, "cudaMalloc failed!");
@@ -249,7 +245,7 @@ cudaError_t gaussEliminationWithCuda(matrix A, int n)
 		}
 
 
-		if(-0.1 + epsilon <= diagonal_value  && diagonal_value <= 0.1 - epsilon) {
+		if(-MIN_DIAG_VALUE + epsilon <= diagonal_value  && diagonal_value <= MIN_DIAG_VALUE - epsilon) {
 			
 			
 			cudaStatus=cudaMemcpy(new_row_index, &i, sizeof(int), cudaMemcpyHostToDevice);
