@@ -15,9 +15,6 @@ double epsilon = 1e-8;
 
 cudaError_t gaussEliminationWithCuda(matrix A, int n);
 
-//Used whe we serch optimal
-//__device__ int * new_row_index;
-
 __global__ void gaussEliminationKernel(int row_index, double * zeroing_factors, matrix dev_AB, int row_size)
 {
 	int i = blockIdx.x;
@@ -74,15 +71,8 @@ __global__ void printMAB(matrix  dev_AB, int row_size) {
 	}
 	printf("\n****************\n");
 }
-/*
-__global__ void findBestPossibleRowIndexKernel(int row_index, matrix  dev_AB, int row_size, double  epsilon, int * new_row_index, int * tmp_max_value) {
-	int i = row_index + threadIdx.x + 1;
-	if (fabs(dev_AB[i * row_size + row_index]) > fabs(*tmp_max_value)) {
-		*tmp_max_value = dev_AB[i * row_size + row_index];
 
-	}
-}
-*/
+
 __global__ void swapRows(int source_row_index, int dest_row_index, matrix dev_AB, int row_size) {
 	int j = threadIdx.x;
 	m_elem  tmp;
@@ -95,6 +85,7 @@ __global__ void swapRows(int source_row_index, int dest_row_index, matrix dev_AB
 
 void printAB(matrix AB, int n) {
 	int row_size = n + 1;
+	printf("%d\n", n);
 	for (int i = 0; i < n; i++) {
 		for (int j = 0; j < n - 1; j++) {
 			printf("%lf ", AB[i * row_size + j]);
@@ -141,13 +132,12 @@ int main()
 		fprintf(stderr, "multiply launch failed: %s\n", cudaGetErrorString(cudaStatus));
 	}
 	
-	printf("\n\n");
 	
 	printAB(AB, n);
 
     cudaStatus = cudaDeviceReset();
     if (cudaStatus != cudaSuccess) {
-        fprintf(stderr, "cudaDeviceReset failed!");
+      fprintf(stderr, "cudaDeviceReset failed!");
         return 1;
     }
 
@@ -204,7 +194,6 @@ cudaError_t gaussEliminationWithCuda(matrix A, int n)
 	
 	cudaStatus = cudaMemcpy(dev_AB, A, size * sizeof(m_elem) , cudaMemcpyHostToDevice);
 	if (cudaStatus != cudaSuccess) {
-		fprintf(stderr, "cudaMalloc  failed for %d rowdsds  !", size);
 		fprintf(stderr, "cudaMemcpy failed!");
 		goto Error;
 	}
@@ -213,22 +202,25 @@ cudaError_t gaussEliminationWithCuda(matrix A, int n)
 	cudaMalloc((void**)&zeroing_factors, n * sizeof(double));
 	m_elem* host_tmp_column = (m_elem*)malloc(n * sizeof(m_elem));
 	m_elem* device_tmp_column;
+	
 	cudaStatus = cudaMalloc((void**)&device_tmp_column, n * sizeof(m_elem));
+	
 	if (cudaStatus != cudaSuccess) {
-		fprintf(stderr, "cudaMalloc failed !");
+		fprintf(stderr, "cudaMalloc failed for variable device_tmp_column !");
 		goto Error;
 	}
+
 	int * local_new_row_index = (int*)malloc(sizeof(int));
 
 	if (local_new_row_index == NULL) {
-		fprintf(stderr, "malloc ty pizdo!");
+		fprintf(stderr, "Malloc on CPU failed for new_row_index !");
 		goto Error;
 	}
 	double diagonal_value = 0;
 	int * new_row_index;
 	cudaStatus = cudaMalloc((void**)&new_row_index, sizeof(int));
 	if (cudaStatus != cudaSuccess) {
-		fprintf(stderr, "cudaMalloc failed !");
+		fprintf(stderr, "cudaMalloc failed for new_row_index!");
 		goto Error;
 	}
 
@@ -236,11 +228,8 @@ cudaError_t gaussEliminationWithCuda(matrix A, int n)
 
 
 	for (int i = 0; i < n; i++) {
-		
 		cudaStatus = cudaMemcpy(&diagonal_value, &dev_AB[i * row_size + i], sizeof(double), cudaMemcpyDeviceToHost);
 		if (cudaStatus != cudaSuccess) {
-			fprintf(stderr, "cudaMalloc  failed for %d tam!", i);
-			fprintf(stderr, "cudaMemcpy failed!");
 			goto Error;
 		}
 
@@ -249,10 +238,8 @@ cudaError_t gaussEliminationWithCuda(matrix A, int n)
 			
 			
 			cudaStatus=cudaMemcpy(new_row_index, &i, sizeof(int), cudaMemcpyHostToDevice);
-			printf("%d", i);
 			if (cudaStatus != cudaSuccess) {
-				fprintf(stderr, "cudaMalloc  failed for %d tu  !", i);
-				fprintf(stderr, "cudaMemcpy failed!");
+				fprintf(stderr, "cudaMemcpy failed fow new_row_index!");
 				goto Error;
 			}
 			findOptimalRowIndexKernel<<<1, n- i -1 >>>(i, dev_AB, row_size, epsilon, new_row_index);
@@ -260,29 +247,25 @@ cudaError_t gaussEliminationWithCuda(matrix A, int n)
 			synchronizeDevice("findOptimalRowIndexKernel", dev_AB);
 			cudaStatus=cudaMemcpy(local_new_row_index, new_row_index, sizeof(int), cudaMemcpyDeviceToHost);
 			if (cudaStatus != cudaSuccess) {	
-				fprintf(stderr, "cudaMalloc  failed for %d rowdsds  !", size);
-				fprintf(stderr, "cudaMemcpy failed!");
 				goto Error;
 			}
 
 			//it means that correct row was finded
 			if (i != *local_new_row_index) {
-				printf("pizda%d %da", i ,*local_new_row_index);
 				swapRows << <1, row_size >> > (i, *local_new_row_index, dev_AB, row_size);
 				synchronizeDevice("swapRows", dev_AB);
 			}
 			//If it is not the last row
 			else  if(i != n-1) {
-				printf("Tu jest dopiero pizda\n");
 				getColumn <<<1, n >>> (i, dev_AB, row_size, device_tmp_column);
 				synchronizeDevice("getColumn", dev_AB);
 				cudaStatus = cudaMemcpy(host_tmp_column, device_tmp_column, n * sizeof(m_elem), cudaMemcpyDeviceToHost);
 				if (cudaStatus != cudaSuccess) {
-						fprintf(stderr, "cudaMempy  failed for %d elements! ", size);
+				
 						goto Error;
 				}
-				//max_index = getIndexOfMaxAbsValue(host_tmp_column, n, i);
-				max_index = 5;
+				max_index = getIndexOfMaxAbsValue(host_tmp_column, n, i);
+				
 				swapRows << <1, row_size >> > (i, max_index, dev_AB, row_size);
 				synchronizeDevice("swapRows", dev_AB);
 			}
@@ -291,7 +274,6 @@ cudaError_t gaussEliminationWithCuda(matrix A, int n)
 		}
 		
 		//printMAB<<<1,1>>>(dev_AB, row_size);
-		//synchronizeDevice("printMAb", dev_AB);
 		// One block , n threds , each thread per row
 		getZeroingFactorsKernel <<< 1, n >>> (i, zeroing_factors, dev_AB, row_size);
 		synchronizeDevice("getZeroingFactorsKernel", dev_AB);
